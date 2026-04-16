@@ -1,0 +1,57 @@
+use std::time::Duration;
+use axum::Router;
+use axum::routing::any;
+use reqwest::{Client, ClientBuilder};
+use tower_http::timeout::TimeoutLayer;
+use tower_http::trace::TraceLayer;
+use std::env;
+
+use crate::app_state::AppState;
+
+mod app_state;
+mod proxy;
+mod config;
+mod matcher;
+use std::fs;
+use axum::http::StatusCode;
+use crate::config::AppConfig;
+
+
+
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::fmt::init();
+
+    let gw_host = env::var("GW_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
+    let gw_port = env::var("GW_PORT").unwrap_or_else(|_| "3000".to_string());
+
+    let config_path = env::var("GW_CONFIG_PATH").unwrap_or_else(|_| "config.yaml".to_string());
+    let config_str = fs::read_to_string(config_path).unwrap();
+    let config: AppConfig = serde_yaml::from_str(&config_str).unwrap();
+
+    let client:Client = Client::builder()
+        .pool_idle_timeout(Duration::from_secs(30))//timeout for idle sockets being kept-alive
+        .connect_timeout(Duration::from_secs(5))
+        .connection_verbose(true)//just for test purpose
+        .build()
+        .unwrap();
+
+    let state = AppState {
+        client,
+        config
+    };
+
+    let app = Router::new()
+        .route("/api/{*path}", any(proxy::handler))
+        .with_state(state)
+        .layer(TraceLayer::new_for_http())
+        .layer(TimeoutLayer ::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(5)));
+
+    let listener = tokio::net::TcpListener::bind(format!("{}:{}", gw_host, gw_port))
+        .await
+        .unwrap();
+
+    axum::serve(listener, app)
+        .await
+        .unwrap();
+}
