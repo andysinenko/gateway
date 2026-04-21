@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use axum::Router;
 use axum::routing::any;
 use reqwest::{Client, ClientBuilder};
@@ -21,6 +21,8 @@ use crate::config::AppConfig;
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
+
+    tracing::info!("Gateway is starting!");
 
     let gw_host = env::var("GW_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
     let gw_port = env::var("GW_PORT").unwrap_or_else(|_| "3000".to_string());
