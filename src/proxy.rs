@@ -4,25 +4,29 @@ use axum::{
     body::Body,
     response::Response,
 };
-
 use crate::{AppState, matcher::match_route};
 
 pub async fn handler(
     State(state): State<AppState>,
     Path(path): Path<String>,
-    mut req: Request<Body>,
+    req: Request<Body>,
 ) -> Result<Response, StatusCode> {
 
     let full_path = format!("/api/{}", path);
 
     tracing::info!("incoming: {}", full_path);
 
-    let route = match_route(&full_path, &state.config.routes)
+    let matched = match_route(&full_path, &state.config.routes)
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    tracing::info!("route: {:?}", route);
+    tracing::info!("route: {:?}", matched.route);
+    tracing::info!("params: {:?}", matched.params);
 
-    let uri = format!("{}{}", route.target, route.rewrite);
+    let rewritten_path = apply_rewrite(&matched.route.rewrite, &matched.params);
+
+    let query = req.uri().query().map(|q| format!("?{}", q)).unwrap_or_default();
+
+    let uri = format!("{}{}{}", matched.route.target, rewritten_path, query);
 
     tracing::info!("proxying to: {}", uri);
 
@@ -51,8 +55,18 @@ pub async fn handler(
     for (name, value) in resp.headers() {
         response_builder = response_builder.header(name, value);
     }
-
     let bytes = resp.bytes().await.map_err(|_| StatusCode::BAD_GATEWAY)?;
 
     Ok(response_builder.body(Body::from(bytes)).unwrap())
+}
+
+pub fn apply_rewrite(rewrite: &str, params: &std::collections::HashMap<String, String>) -> String {
+    let mut result = rewrite.to_string();
+
+    for (key, value) in params {
+        let placeholder = format!("{{{}}}", key);
+        result = result.replace(&placeholder, value);
+    }
+
+    result
 }

@@ -1,8 +1,12 @@
 routes:
-  - match_path: "/api/users"
+  - match: "/api/users"
     rewrite: "/api/users"
     target: "http://localhost:8080"
 
-  - match_path: "/api/books"
+  - match: "/api/books"
     rewrite: "/api/books"
+    target: "http://localhost:8080"
+
+  - match: "/api/books/{id}"
+    rewrite: "/api/books/{id}"
     target: "http://localhost:8080"

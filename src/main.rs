@@ -32,7 +32,7 @@ async fn main() {
     let client:Client = Client::builder()
         .pool_idle_timeout(Duration::from_secs(30))//timeout for idle sockets being kept-alive
         .connect_timeout(Duration::from_secs(5))
-        .connection_verbose(true)//just for test purpose
+        .connection_verbose(true)//just for test purpose, todo удалить!
         .build()
         .unwrap();
 
