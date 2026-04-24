@@ -12,8 +12,12 @@ mod app_state;
 mod proxy;
 mod config;
 mod matcher;
+mod cache;
+
 use std::fs;
+use std::sync::Arc;
 use axum::http::StatusCode;
+use crate::cache::TtlCache;
 use crate::config::AppConfig;
 
 
@@ -23,6 +27,11 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     tracing::info!("Gateway is starting!");
+
+    //init cache
+    let cache = Arc::new(TtlCache::new(60));
+    //task for cache clearence
+    cache.start_eviction_task();
 
     let gw_host = env::var("GW_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
     let gw_port = env::var("GW_PORT").unwrap_or_else(|_| "3000".to_string());
@@ -40,7 +49,8 @@ async fn main() {
 
     let state = AppState {
         client,
-        config
+        config,
+        cache,
     };
 
     let app = Router::new()
