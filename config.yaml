@@ -10,3 +10,11 @@ routes:
   - match: "/api/books/{id}"
     rewrite: "/api/books/{id}"
     target: "http://localhost:8080"
+
+  - match: "/api/genres"
+    rewrite: "/api/genres"
+    target: "http://localhost:8080"
+
+  - match: "/api/genres/{id}"
+    rewrite: "/api/genres/{id}"
+    target: "http://localhost:8080"
