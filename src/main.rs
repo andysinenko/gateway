@@ -24,9 +24,8 @@ use crate::config::AppConfig;
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
-
-    tracing::info!("Gateway is starting!");
+    tracer_subscr();
+    tracing::info!("*** My Gateway is starting ***");
 
     //init cache
     let cache = Arc::new(TtlCache::new(60));
@@ -56,8 +55,8 @@ async fn main() {
     let app = Router::new()
         .route("/api/{*path}", any(proxy::handler))
         .with_state(state)
-        .layer(TraceLayer::new_for_http())
-        .layer(TimeoutLayer ::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(5)));
+        .layer(TimeoutLayer ::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(5)))
+        .layer(TraceLayer::new_for_http());
 
     let listener = tokio::net::TcpListener::bind(format!("{}:{}", gw_host, gw_port))
         .await
@@ -66,4 +65,12 @@ async fn main() {
     axum::serve(listener, app)
         .await
         .unwrap();
+}
+
+fn tracer_subscr() {
+    tracing_subscriber::fmt()
+        .with_env_filter("info,tower_http=debug,hyper_util=debug,reqwest=debug")
+        //.with_env_filter("trace")
+        .with_ansi(true)
+        .init();
 }
