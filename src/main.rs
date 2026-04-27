@@ -1,7 +1,7 @@
-use std::time::{Duration, Instant};
+use std::time::{Duration};
 use axum::Router;
 use axum::routing::any;
-use reqwest::{Client, ClientBuilder};
+use reqwest::Client;
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
 use std::env;
@@ -18,7 +18,7 @@ use std::fs;
 use std::sync::Arc;
 use axum::http::StatusCode;
 use crate::cache::TtlCache;
-use crate::config::AppConfig;
+use crate::config::RouteConfig;
 
 
 
@@ -34,10 +34,11 @@ async fn main() {
 
     let gw_host = env::var("GW_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
     let gw_port = env::var("GW_PORT").unwrap_or_else(|_| "3000".to_string());
-
-    let config_path = env::var("GW_CONFIG_PATH").unwrap_or_else(|_| "config.yaml".to_string());
-    let config_str = fs::read_to_string(config_path).unwrap();
-    let config: AppConfig = serde_yaml::from_str(&config_str).unwrap();
+    
+    let route_config: RouteConfig = get_route_config().unwrap_or_else(|e| {
+        tracing::error!("Failed to load route config: {}", e);
+        std::process::exit(1);
+    });
 
     let client:Client = Client::builder()
         .pool_idle_timeout(Duration::from_secs(30))//timeout for idle sockets being kept-alive
@@ -48,7 +49,7 @@ async fn main() {
 
     let state = AppState {
         client,
-        config,
+        route_config,
         cache,
     };
 
@@ -73,4 +74,16 @@ fn tracer_subscr() {
         //.with_env_filter("trace")
         .with_ansi(true)
         .init();
+}
+
+fn get_route_config() -> Result<RouteConfig, Box<dyn std::error::Error>> {
+    let route_config_path = env::var("GW_ROUTE_CONFIG_PATH").unwrap_or_else(|_| "route_config.yaml".to_string());
+
+    tracing::info!("Route config file: {}", route_config_path);
+
+    let route_config_str = fs::read_to_string(&route_config_path).map_err(|e| format!("Failed to read config file '{}': {}", route_config_path, e))?;
+    let route_config: RouteConfig = serde_yaml::from_str(&route_config_str).map_err(|e| format!("Failed to parse config file '{}': {}", route_config_path, e))?;
+
+
+    Ok(route_config)
 }

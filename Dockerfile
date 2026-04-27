@@ -21,7 +21,7 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 COPY --from=builder /app/target/release/gateway .
-COPY config.yaml .
+COPY route_config.yaml .
 
 ENV GW_HOST=0.0.0.0
 ENV GW_PORT=3000

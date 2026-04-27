@@ -9,6 +9,6 @@ pub struct Route {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct AppConfig {
+pub struct RouteConfig {
     pub routes: Vec<Route>,
 }

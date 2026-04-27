@@ -18,7 +18,7 @@ pub async fn handler(
     let full_path = format!("/api/{}", path);
     tracing::info!("incoming: {}", full_path);
 
-    let matched = match_route(&full_path, &state.config.routes)
+    let matched = match_route(&full_path, &state.route_config.routes)
         .ok_or(StatusCode::NOT_FOUND)?;
 
     tracing::info!("route: {:?}", matched.route);
@@ -31,6 +31,11 @@ pub async fn handler(
     //create key for cashing
     let cache_key = format!("{}{}", req.method(), uri);
     let method = req.method().clone();
+
+    if method == Method::PUT || method == Method::DELETE {
+        let get_key = format!("{}{}", Method::GET, uri);
+        cache.invalidate(&get_key);
+    }
 
     // We are cashing only GET method
     if req.method() == Method::GET {
