@@ -12,23 +12,18 @@ pub async fn handler(
     Path(path): Path<String>,
     req: Request<Body>,
 ) -> Result<Response, StatusCode> {
-
     let cache = state.cache;
 
     let full_path = format!("/api/{}", path);
-    tracing::info!("incoming: {}", full_path);
+    tracing::debug!("incoming: {}", full_path);
 
     let matched = match_route(&full_path, &state.route_config.routes)
         .ok_or(StatusCode::NOT_FOUND)?;
-
-    tracing::info!("route: {:?}", matched.route);
-    tracing::info!("params: {:?}", matched.params);
 
     let rewritten_path = apply_rewrite(&matched.route.rewrite, &matched.params);
     let query = req.uri().query().map(|q| format!("?{}", q)).unwrap_or_default();
     let uri = format!("{}{}{}", matched.route.target, rewritten_path, query);
 
-    //create key for cashing
     let cache_key = format!("{}{}", req.method(), uri);
     let method = req.method().clone();
 
@@ -37,20 +32,45 @@ pub async fn handler(
         cache.invalidate(&get_key);
     }
 
-    // We are cashing only GET method
     if req.method() == Method::GET {
-        tracing::info!("return data from cashe for method GET: {}", &cache_key);
+        // fsresh cash—we pay out immediately
         if let Some(cached) = cache.get(&cache_key) {
             return Ok(Response::builder()
                 .status(200)
                 .body(Body::from(cached))
                 .unwrap());
         }
+
+        // stale cache — return the stale data, refresh in the background
+        if let Some(stale) = cache.get_stale(&cache_key) {
+            if cache.try_lock_inflight(&cache_key) {
+                let cache_clone = cache.clone();
+                let client_clone = state.client.clone();
+                let uri_clone = uri.clone();
+                let key_clone = cache_key.clone();
+
+                tokio::spawn(async move {
+                    if let Ok(resp) = client_clone.get(&uri_clone).send().await {
+                        if resp.status().is_success() {
+                            if let Ok(bytes) = resp.bytes().await {
+                                cache_clone.set(key_clone.clone(), bytes.to_vec());
+                            }
+                        }
+                    }
+                    cache_clone.unlock_inflight(&key_clone);
+                });
+            }
+
+            return Ok(Response::builder()
+                .status(200)
+                .body(Body::from(stale))
+                .unwrap());
+        }
     }
 
-    tracing::info!("proxying to: {}", uri);
+    tracing::debug!("proxying to: {}", uri);
 
-    let mut builder = state.client.request(req.method().clone(), uri);
+    let mut builder = state.client.request(req.method().clone(), &uri);
 
     for (name, value) in req.headers() {
         builder = builder.header(name, value);
@@ -65,21 +85,23 @@ pub async fn handler(
         .send()
         .await
         .map_err(|e| {
-            tracing::error!("downstream error: {}", e);
+            tracing::error!("downstream error: {} | is_connect: {} | is_timeout: {}",
+                e, e.is_connect(), e.is_timeout());
             StatusCode::BAD_GATEWAY
         })?;
 
     let status = resp.status();
+
     let mut response_builder = Response::builder().status(status);
 
     for (name, value) in resp.headers() {
         response_builder = response_builder.header(name, value);
     }
+
     let bytes = resp.bytes().await.map_err(|_| StatusCode::BAD_GATEWAY)?;
 
-    // save only GET + 200
     if method == Method::GET && status.is_success() {
-        tracing::info!("cache set: {}", cache_key);
+        tracing::debug!("cache set: {}", cache_key);
         cache.set(cache_key, bytes.to_vec());
     }
 
@@ -88,11 +110,9 @@ pub async fn handler(
 
 pub fn apply_rewrite(rewrite: &str, params: &std::collections::HashMap<String, String>) -> String {
     let mut result = rewrite.to_string();
-
     for (key, value) in params {
         let placeholder = format!("{{{}}}", key);
         result = result.replace(&placeholder, value);
     }
-
     result
 }

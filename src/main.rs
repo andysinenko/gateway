@@ -41,9 +41,10 @@ async fn main() {
     });
 
     let client:Client = Client::builder()
-        .pool_idle_timeout(Duration::from_secs(30))//timeout for idle sockets being kept-alive
+        .pool_idle_timeout(Duration::from_secs(30))
         .connect_timeout(Duration::from_secs(5))
-        .connection_verbose(true)//just for test purpose, todo удалить!
+        .pool_max_idle_per_host(100)
+        .tcp_keepalive(Duration::from_secs(30))
         .build()
         .unwrap();
 
@@ -70,8 +71,7 @@ async fn main() {
 
 fn tracer_subscr() {
     tracing_subscriber::fmt()
-        .with_env_filter("info,tower_http=debug,hyper_util=debug,reqwest=debug")
-        //.with_env_filter("trace")
+        //.with_env_filter("info,tower_http=debug,hyper_util=debug,reqwest=debug")
         .with_ansi(true)
         .init();
 }
@@ -79,11 +79,12 @@ fn tracer_subscr() {
 fn get_route_config() -> Result<RouteConfig, Box<dyn std::error::Error>> {
     let route_config_path = env::var("GW_ROUTE_CONFIG_PATH").unwrap_or_else(|_| "route_config.yaml".to_string());
 
-    tracing::info!("Route config file: {}", route_config_path);
+    tracing::debug!("Route config file: {}", route_config_path);
 
-    let route_config_str = fs::read_to_string(&route_config_path).map_err(|e| format!("Failed to read config file '{}': {}", route_config_path, e))?;
-    let route_config: RouteConfig = serde_yaml::from_str(&route_config_str).map_err(|e| format!("Failed to parse config file '{}': {}", route_config_path, e))?;
-
-
+    let route_config_str = fs::read_to_string(&route_config_path)
+        .map_err(|e| format!("Failed to read config file '{}': {}", route_config_path, e))?;
+    let route_config: RouteConfig = serde_yaml::from_str(&route_config_str)
+        .map_err(|e| format!("Failed to parse config file '{}': {}", route_config_path, e))?;
+    
     Ok(route_config)
 }
